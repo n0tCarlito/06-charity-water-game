@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Water Drop Dash</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <main class="app">
+        <header class="top-bar">
+            <h1>Water Drop Dash</h1>
+            <p>Collect clean water. Dodge pollution.</p>
+        </header>
+
+        <section class="hud" aria-label="Game score display">
+            <div class="score-card">
+                <span>Score</span>
+                <strong id="scoreValue">0</strong>
+            </div>
+            <div class="score-card">
+                <span>Best</span>
+                <strong id="bestScoreValue">0</strong>
+            </div>
+        </section>
+
+        <section class="hud-actions" aria-label="Score actions">
+            <button id="resetBestButton" class="reset-btn" type="button">Reset High Score</button>
+        </section>
+
+        <section class="super-meter" aria-label="Hydromatic super meter">
+            <div class="meter-head">
+                <span id="meterLabel">Hydromatic Meter</span>
+                <strong id="modeStatus">Charging</strong>
+            </div>
+            <div class="meter-track">
+                <div id="meterFill" class="meter-fill"></div>
+            </div>
+        </section>
+
+        <section class="game-shell">
+            <div id="gameArea" class="game-area" aria-label="Game area">
+                <div class="lane lane-1"></div>
+                <div class="lane lane-2"></div>
+                <div class="lane lane-3"></div>
+
+                <div id="player" class="player" aria-label="Water drop character">💧</div>
+
+                <div id="startOverlay" class="overlay visible" role="dialog" aria-label="Start game">
+                    <h2>Welcome to Water Drop Dash</h2>
+                    <p class="start-subtitle">Jump in and help protect clean water, one lane at a time.</p>
+                    <p>Use Left/Right keys or tap buttons to move between 3 lanes.</p>
+
+                    <div class="mode-toggle" aria-label="Frenzied mode setting">
+                        <span>Frenzied Mode</span>
+                        <label class="toggle-switch" for="frenzyToggleStart">
+                            <input id="frenzyToggleStart" type="checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <p class="mode-note">ON = 2.5x speed and 2x point gains</p>
+
+                    <div class="drop-guide" aria-label="Drop type guide">
+                        <article class="drop-card clean-card">
+                            <div class="drop-icon" aria-hidden="true">💧</div>
+                            <h3>Clean Drop</h3>
+                            <p>Collect to gain <strong>+10 points</strong> and charge your Hydromatic Meter.</p>
+                        </article>
+                        <article class="drop-card polluted-card">
+                            <div class="drop-icon" aria-hidden="true">🛢️</div>
+                            <h3>Gasoline Drop</h3>
+                            <p>Avoid it. If you are not invincible, touching this ends the run.</p>
+                        </article>
+                        <article class="drop-card reducer-card">
+                            <div class="drop-icon" aria-hidden="true">💧</div>
+                            <h3>Green Drop</h3>
+                            <p>Hazard drop. It removes <strong>50 points</strong>, unless your shield is active.</p>
+                        </article>
+                    </div>
+
+                    <button id="startButton" class="action-btn">Start Game</button>
+                </div>
+
+                <div id="gameOverOverlay" class="overlay" role="dialog" aria-label="Game over">
+                    <h2>Game Over</h2>
+                    <p id="newBestMessage" class="new-best-message">Congratulations! You beat your high score!</p>
+                    <p>Final Score: <span id="finalScore">0</span></p>
+                    <p>Best Score: <span id="bestScore">0</span></p>
+                    <div class="mode-toggle" aria-label="Frenzied mode setting">
+                        <span>Frenzied Mode</span>
+                        <label class="toggle-switch" for="frenzyToggleGameOver">
+                            <input id="frenzyToggleGameOver" type="checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <button id="replayButton" class="action-btn">Play Again</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="controls" aria-label="Touch controls">
+            <button id="leftButton" class="control-btn" aria-label="Move left">◀ Left</button>
+            <button id="rightButton" class="control-btn" aria-label="Move right">Right ▶</button>
+        </section>
+
+        <div id="resetConfirmModal" class="confirm-modal" aria-hidden="true">
+            <div class="confirm-card" role="dialog" aria-label="Reset high score confirmation">
+                <h3>Reset High Score?</h3>
+                <p>This will set your best score back to <strong>0</strong>. This action cannot be undone.</p>
+                <div class="confirm-actions">
+                    <button id="cancelResetButton" class="confirm-btn cancel-btn" type="button">Cancel</button>
+                    <button id="confirmResetButton" class="confirm-btn danger-btn" type="button">Yes, Reset</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
