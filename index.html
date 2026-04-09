@@ -46,6 +46,21 @@
 
                 <div id="player" class="player" aria-label="Water drop character">💧</div>
 
+                <!-- Boss element for the cutscene -->
+                <div id="boss" class="boss" aria-label="Boss enemy appearing"></div>
+
+                <div id="bossHealthBar" class="boss-health" aria-label="Boss health" aria-hidden="true">
+                    <div class="boss-health-header">
+                        <span>Boss Health</span>
+                        <strong id="bossHealthValue">100%</strong>
+                    </div>
+                    <div class="boss-health-track">
+                        <div id="bossHealthFill" class="boss-health-fill"></div>
+                    </div>
+                </div>
+
+                <div id="bossFireHint" class="boss-fire-hint" aria-hidden="true">Press SPACE to fire!</div>
+
                 <div id="startOverlay" class="overlay visible" role="dialog" aria-label="Start game">
                     <h2>Welcome to Water Drop Dash</h2>
                     <p class="start-subtitle">Jump in and help protect clean water, one lane at a time.</p>
@@ -59,6 +74,16 @@
                         </label>
                     </div>
                     <p class="mode-note">ON = 2.5x speed and 2x point gains</p>
+
+                    <div class="mode-toggle tsunami-toggle" aria-label="Decontamination mode setting">
+                        <span>Decontamination</span>
+                        <label class="toggle-switch" for="tsunamiToggleStart">
+                            <input id="tsunamiToggleStart" type="checkbox" disabled>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <p class="mode-note locked-note" id="decontaminationLockedStart">🔒 Reach 1000 points to unlock this mode</p>
+                    <p class="mode-note" style="display: none;" id="decontaminationUnlockedStart">The waters need to be cleansed, but something stands in the way...</p>
 
                     <div class="drop-guide" aria-label="Drop type guide">
                         <article class="drop-card clean-card">
@@ -82,7 +107,8 @@
                 </div>
 
                 <div id="gameOverOverlay" class="overlay" role="dialog" aria-label="Game over">
-                    <h2>Game Over</h2>
+                    <h2 id="gameOverTitle">Game Over</h2>
+                    <p id="victoryMessage" class="victory-message">Congratulations! You defeated the boss and cleaned the water!</p>
                     <p id="newBestMessage" class="new-best-message">Congratulations! You beat your high score!</p>
                     <p>Final Score: <span id="finalScore">0</span></p>
                     <p>Best Score: <span id="bestScore">0</span></p>
@@ -93,9 +119,28 @@
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
+
+                    <div class="mode-toggle tsunami-toggle" aria-label="Decontamination mode setting">
+                        <span>Decontamination</span>
+                        <label class="toggle-switch" for="tsunamiToggleGameOver">
+                            <input id="tsunamiToggleGameOver" type="checkbox" disabled>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <p class="mode-note locked-note" id="decontaminationLockedGameOver">🔒 Reach 1000 points to unlock this mode</p>
+                    <p class="mode-note" style="display: none;" id="decontaminationUnlockedGameOver">The waters cry to be cleansed, but something stands in the way...</p>
                     <button id="replayButton" class="action-btn">Play Again</button>
                 </div>
             </div>
+
+            <aside class="journey-hud" aria-label="Player location progress">
+                <span class="journey-end-icon" aria-label="Boss at the end">💀</span>
+                <div class="journey-track">
+                    <div id="journeyFill" class="journey-fill"></div>
+                    <div id="journeyMarker" class="journey-marker" aria-hidden="true">💧</div>
+                </div>
+                <span class="journey-label">Start</span>
+            </aside>
         </section>
 
         <section class="controls" aria-label="Touch controls">

@@ -3,18 +3,28 @@
 // Grab elements from the page once so we can reuse them.
 const gameArea = document.getElementById('gameArea');
 const player = document.getElementById('player');
+const boss = document.getElementById('boss');
+const bossHealthBar = document.getElementById('bossHealthBar');
+const bossHealthFill = document.getElementById('bossHealthFill');
+const bossHealthValue = document.getElementById('bossHealthValue');
+const bossFireHint = document.getElementById('bossFireHint');
 
 const scoreValue = document.getElementById('scoreValue');
 const bestScoreValue = document.getElementById('bestScoreValue');
 const meterFill = document.getElementById('meterFill');
 const meterLabel = document.getElementById('meterLabel');
 const modeStatus = document.getElementById('modeStatus');
+const journeyHud = document.querySelector('.journey-hud');
+const journeyFill = document.getElementById('journeyFill');
+const journeyMarker = document.getElementById('journeyMarker');
 
 const startOverlay = document.getElementById('startOverlay');
 const gameOverOverlay = document.getElementById('gameOverOverlay');
 const finalScoreText = document.getElementById('finalScore');
 const bestScoreText = document.getElementById('bestScore');
 const newBestMessage = document.getElementById('newBestMessage');
+const gameOverTitle = document.getElementById('gameOverTitle');
+const victoryMessage = document.getElementById('victoryMessage');
 
 const startButton = document.getElementById('startButton');
 const replayButton = document.getElementById('replayButton');
@@ -23,6 +33,8 @@ const rightButton = document.getElementById('rightButton');
 const resetBestButton = document.getElementById('resetBestButton');
 const frenzyToggleStart = document.getElementById('frenzyToggleStart');
 const frenzyToggleGameOver = document.getElementById('frenzyToggleGameOver');
+const tsunamiToggleStart = document.getElementById('tsunamiToggleStart');
+const tsunamiToggleGameOver = document.getElementById('tsunamiToggleGameOver');
 const resetConfirmModal = document.getElementById('resetConfirmModal');
 const confirmResetButton = document.getElementById('confirmResetButton');
 const cancelResetButton = document.getElementById('cancelResetButton');
@@ -32,6 +44,7 @@ const lanePositions = [0, 1, 2];
 const lanePercent = [16.66, 50, 83.33];
 const bestScoreKey = 'waterDropDashBestScore';
 const frenzyModeKey = 'waterDropDashFrenziedMode';
+const tsunamiModeKey = 'waterDropDashTsunamiMode';
 const superMeterMax = 100;
 const modeDuration = 7;
 const meterDrainPerSecond = 6;
@@ -40,12 +53,22 @@ const speedIncreasePerStep = 0.25;
 const maxProgressiveSpeedMultiplier = 3;
 const frenzySpeedMultiplier = 2.5;
 const frenzyPointMultiplier = 2;
+const journeyDurationSeconds = 30;
+const hydroJourneyBoost = 1.2;
+const maxJourneyProgress = 100;
+const bossMoveIntervalSeconds = 2;
+const bossMaxHealth = 100;
+const bossPhaseOneAttackIntervalSeconds = 0.85;
+const bossDamagePerShot = 5;
+const shotSpeed = 680;
+const shotCooldownSeconds = 0.2;
 
 let playerLane = 1;
 let items = [];
 let score = 0;
 let bestScore = Number(localStorage.getItem(bestScoreKey)) || 0;
 let frenzyModeEnabled = localStorage.getItem(frenzyModeKey) === 'true';
+let tsunamiModeEnabled = localStorage.getItem(tsunamiModeKey) === 'true';
 let superMeter = 0;
 let invincibleMode = false;
 let modeTimeLeft = 0;
@@ -55,21 +78,100 @@ let spawnTimer = 0;
 let gameLoopId = null;
 let lastFrameTime = 0;
 let gameTimeSeconds = 0;
+let journeyProgressSeconds = 0;
+let bossAreaReached = false;
+let pointAudioContext = null;
+let gameOverAudioContext = null;
+let bossLane = 1;
+let bossMoveTimer = 0;
+let bossMovementActive = false;
+let bossHealth = bossMaxHealth;
+let bossAttackTimer = 0;
+let playerShots = [];
+let shotCooldownTimeLeft = 0;
+let bossDamageFlashTimeoutId = null;
 
 bestScoreValue.textContent = bestScore;
 movePlayerToLane();
 updateSuperMeterUI();
-syncFrenzyToggles();
+setFrenzyMode(frenzyModeEnabled);
+setTsunamiMode(tsunamiModeEnabled);
+updateDecontaminationLock();
 
 function syncFrenzyToggles() {
 	frenzyToggleStart.checked = frenzyModeEnabled;
 	frenzyToggleGameOver.checked = frenzyModeEnabled;
 }
 
+function syncTsunamiToggles() {
+	tsunamiToggleStart.checked = tsunamiModeEnabled;
+	tsunamiToggleGameOver.checked = tsunamiModeEnabled;
+}
+
+function updateDecontaminationLock() {
+	const isUnlocked = bestScore >= 1000;
+	
+	// Update both toggles' disabled state
+	tsunamiToggleStart.disabled = !isUnlocked;
+	tsunamiToggleGameOver.disabled = !isUnlocked;
+	
+	// Show/hide appropriate messages
+	const lockedStartMsg = document.getElementById('decontaminationLockedStart');
+	const unlockedStartMsg = document.getElementById('decontaminationUnlockedStart');
+	const lockedGameOverMsg = document.getElementById('decontaminationLockedGameOver');
+	const unlockedGameOverMsg = document.getElementById('decontaminationUnlockedGameOver');
+	
+	if (isUnlocked) {
+		lockedStartMsg.style.display = 'none';
+		unlockedStartMsg.style.display = 'block';
+		lockedGameOverMsg.style.display = 'none';
+		unlockedGameOverMsg.style.display = 'block';
+	} else {
+		lockedStartMsg.style.display = 'block';
+		unlockedStartMsg.style.display = 'none';
+		lockedGameOverMsg.style.display = 'block';
+		unlockedGameOverMsg.style.display = 'none';
+	}
+}
+
 function setFrenzyMode(enabled) {
+	// Decontamination mode blocks Frenzied Mode.
+	if (tsunamiModeEnabled && enabled) {
+		enabled = false;
+	}
+
 	frenzyModeEnabled = enabled;
 	localStorage.setItem(frenzyModeKey, String(enabled));
 	syncFrenzyToggles();
+}
+
+function setTsunamiMode(enabled) {
+	// Turning on Decontamination automatically turns Frenzied Mode off.
+	if (enabled) {
+		setFrenzyMode(false);
+	}
+
+	tsunamiModeEnabled = enabled;
+	localStorage.setItem(tsunamiModeKey, String(enabled));
+	syncTsunamiToggles();
+	frenzyToggleStart.disabled = enabled;
+	frenzyToggleGameOver.disabled = enabled;
+	if (!enabled) {
+		journeyProgressSeconds = 0;
+		bossAreaReached = false;
+	}
+	updateJourneyUI();
+	applyTsunamiVisuals();
+}
+
+function applyTsunamiVisuals() {
+	if (tsunamiModeEnabled) {
+		gameArea.classList.add('polluted');
+	} else {
+		gameArea.classList.remove('polluted');
+	}
+
+	journeyHud.style.display = tsunamiModeEnabled ? 'flex' : 'none';
 }
 
 function getHydroModeDuration() {
@@ -83,12 +185,93 @@ function movePlayerToLane() {
 	player.style.transform = 'translateX(-50%)';
 }
 
+function moveBossToLane(lane) {
+	bossLane = lane;
+	boss.style.left = `${lanePercent[lane]}%`;
+	boss.style.transform = 'translateX(-50%)';
+}
+
+function moveBossToRandomLane() {
+	const possibleLanes = lanePositions.filter((lane) => lane !== bossLane);
+	const randomLane = possibleLanes[Math.floor(Math.random() * possibleLanes.length)];
+	moveBossToLane(randomLane);
+}
+
+function updateBossHealthUI() {
+	const clampedHealth = Math.max(0, Math.min(bossMaxHealth, bossHealth));
+	const healthPercent = (clampedHealth / bossMaxHealth) * 100;
+	bossHealthFill.style.width = `${healthPercent}%`;
+	bossHealthValue.textContent = `${Math.round(healthPercent)}%`;
+}
+
+function spawnBossAttackDrop() {
+	const lane = lanePositions[Math.floor(Math.random() * lanePositions.length)];
+	const itemEl = document.createElement('div');
+	let dropSpeed = 290 + Math.random() * 180;
+
+	// Some gasoline drops are extra fast to make attacks less predictable.
+	if (Math.random() < 0.35) {
+		dropSpeed += 120;
+	}
+
+	itemEl.classList.add('item');
+	itemEl.classList.add('polluted');
+	itemEl.textContent = '🛢️';
+	itemEl.style.left = `${lanePercent[lane]}%`;
+	itemEl.style.transform = 'translateX(-50%)';
+	itemEl.style.top = '-60px';
+
+	gameArea.appendChild(itemEl);
+
+	items.push({
+		element: itemEl,
+		lane,
+		y: -60,
+		speed: dropSpeed,
+		type: 'polluted'
+	});
+}
+
+function firePlayerShot() {
+	if (!gameRunning || !bossAreaReached || !bossMovementActive) {
+		return;
+	}
+
+	if (shotCooldownTimeLeft > 0) {
+		return;
+	}
+
+	const shotEl = document.createElement('div');
+	shotEl.className = 'player-shot';
+	shotEl.style.left = `${lanePercent[playerLane]}%`;
+	shotEl.style.top = '690px';
+	shotEl.style.transform = 'translateX(-50%)';
+
+	gameArea.appendChild(shotEl);
+
+	playerShots.push({
+		element: shotEl,
+		y: 690,
+		lane: playerLane,
+		speed: shotSpeed
+	});
+
+	shotCooldownTimeLeft = shotCooldownSeconds;
+}
+
+function clearPlayerShots() {
+	playerShots.forEach((shot) => shot.element.remove());
+	playerShots = [];
+}
+
 function startGame() {
 	clearItems();
 	score = 0;
 	superMeter = 0;
 	invincibleMode = false;
 	modeTimeLeft = 0;
+	journeyProgressSeconds = 0;
+	bossAreaReached = false;
 	playerLane = 1;
 	gameRunning = true;
 	spawnTimer = 0;
@@ -99,18 +282,49 @@ function startGame() {
 	updateSuperMeterUI();
 	startOverlay.classList.remove('visible');
 	gameOverOverlay.classList.remove('visible');
+	victoryMessage.classList.remove('visible');
 	newBestMessage.classList.remove('visible');
+	gameOverTitle.textContent = 'Game Over';
 	player.classList.remove('invincible');
+	boss.classList.remove('appearing');
+	boss.classList.remove('damaged');
+	moveBossToLane(1);
+	bossMoveTimer = 0;
+	bossMovementActive = false;
+	bossHealth = bossMaxHealth;
+	bossAttackTimer = 0;
+	shotCooldownTimeLeft = 0;
+	bossHealthBar.classList.remove('visible');
+	bossHealthBar.setAttribute('aria-hidden', 'true');
+	bossFireHint.classList.remove('visible');
+	bossFireHint.setAttribute('aria-hidden', 'true');
+	updateBossHealthUI();
 	gameArea.classList.remove('chaos');
+	applyTsunamiVisuals();
+	updateJourneyUI();
 	movePlayerToLane();
 
 	// requestAnimationFrame creates a smooth loop based on browser frames.
 	gameLoopId = requestAnimationFrame(gameLoop);
 }
 
-function endGame() {
+function endGame(didWin = false) {
 	gameRunning = false;
 	cancelAnimationFrame(gameLoopId);
+	boss.classList.remove('damaged');
+	if (bossDamageFlashTimeoutId) {
+		clearTimeout(bossDamageFlashTimeoutId);
+		bossDamageFlashTimeoutId = null;
+	}
+	bossMovementActive = false;
+	bossAttackTimer = 0;
+	bossMoveTimer = 0;
+	shotCooldownTimeLeft = 0;
+	clearPlayerShots();
+	bossFireHint.classList.remove('visible');
+	bossFireHint.setAttribute('aria-hidden', 'true');
+	gameOverTitle.textContent = didWin ? 'Victory!' : 'Game Over';
+	victoryMessage.classList.toggle('visible', didWin);
 
 	const finalScore = Math.floor(score);
 	finalScoreText.textContent = finalScore;
@@ -120,14 +334,47 @@ function endGame() {
 		bestScore = finalScore;
 		localStorage.setItem(bestScoreKey, String(bestScore));
 		newBestMessage.classList.add('visible');
-		launchConfettiCelebration();
 	} else {
 		newBestMessage.classList.remove('visible');
 	}
 
+	if (didWin) {
+		launchConfettiCelebration();
+	}
+
 	bestScoreValue.textContent = bestScore;
 	bestScoreText.textContent = bestScore;
+	updateDecontaminationLock();
 	gameOverOverlay.classList.add('visible');
+}
+
+function updateJourneyUI() {
+	const progressPercent = (journeyProgressSeconds / journeyDurationSeconds) * 100;
+	const clampedPercent = Math.min(maxJourneyProgress, Math.max(0, progressPercent));
+
+	journeyFill.style.height = `${clampedPercent}%`;
+	journeyMarker.style.bottom = `${clampedPercent}%`;
+}
+
+function enterBossArea() {
+	bossAreaReached = true;
+	journeyProgressSeconds = journeyDurationSeconds;
+	clearItems();
+	spawnTimer = 0;
+	updateJourneyUI();
+	bossMoveTimer = 0;
+	bossMovementActive = false;
+	boss.classList.remove('damaged');
+	moveBossToLane(1);
+	bossAttackTimer = 0;
+	shotCooldownTimeLeft = 0;
+	bossHealthBar.classList.remove('visible');
+	bossHealthBar.setAttribute('aria-hidden', 'true');
+	bossFireHint.classList.remove('visible');
+	bossFireHint.setAttribute('aria-hidden', 'true');
+	
+	// Start the boss appearance cutscene animation
+	boss.classList.add('appearing');
 }
 
 function resetBestScore() {
@@ -136,6 +383,7 @@ function resetBestScore() {
 
 	bestScoreValue.textContent = '0';
 	bestScoreText.textContent = '0';
+	updateDecontaminationLock();
 	newBestMessage.classList.remove('visible');
 }
 
@@ -248,7 +496,7 @@ function createScorePopup(text, lane, popupType = 'normal') {
 
 	popup.textContent = text;
 	popup.style.left = `${lanePercent[lane]}%`;
-	popup.style.top = '430px';
+	popup.style.top = '680px';
 	popup.style.transform = 'translateX(-50%)';
 
 	gameArea.appendChild(popup);
@@ -259,6 +507,69 @@ function createScorePopup(text, lane, popupType = 'normal') {
 	}, 700);
 }
 
+function playPointSound(pitchMultiplier = 1) {
+	if (!pointAudioContext) {
+		pointAudioContext = new window.AudioContext();
+	}
+
+	if (pointAudioContext.state === 'suspended') {
+		pointAudioContext.resume();
+	}
+
+	const startTime = pointAudioContext.currentTime;
+	const volume = pointAudioContext.createGain();
+	const firstNote = pointAudioContext.createOscillator();
+	const secondNote = pointAudioContext.createOscillator();
+
+	// Two quick notes make a cheerful "point earned" chime.
+	firstNote.type = 'triangle';
+	secondNote.type = 'sine';
+	firstNote.frequency.setValueAtTime(740 * pitchMultiplier, startTime);
+	secondNote.frequency.setValueAtTime(988 * pitchMultiplier, startTime + 0.07);
+
+	volume.gain.setValueAtTime(0.0001, startTime);
+	volume.gain.exponentialRampToValueAtTime(0.14, startTime + 0.01);
+	volume.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.22);
+
+	firstNote.connect(volume);
+	secondNote.connect(volume);
+	volume.connect(pointAudioContext.destination);
+
+	firstNote.start(startTime);
+	firstNote.stop(startTime + 0.12);
+	secondNote.start(startTime + 0.07);
+	secondNote.stop(startTime + 0.22);
+}
+
+function playGameOverSound() {
+	if (!gameOverAudioContext) {
+		gameOverAudioContext = new window.AudioContext();
+	}
+
+	if (gameOverAudioContext.state === 'suspended') {
+		gameOverAudioContext.resume();
+	}
+
+	const startTime = gameOverAudioContext.currentTime;
+	const volume = gameOverAudioContext.createGain();
+	const tone = gameOverAudioContext.createOscillator();
+
+	// A short downward tone gives a clear game-over cue.
+	tone.type = 'sawtooth';
+	tone.frequency.setValueAtTime(360, startTime);
+	tone.frequency.exponentialRampToValueAtTime(120, startTime + 0.45);
+
+	volume.gain.setValueAtTime(0.0001, startTime);
+	volume.gain.exponentialRampToValueAtTime(0.16, startTime + 0.02);
+	volume.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.45);
+
+	tone.connect(volume);
+	volume.connect(gameOverAudioContext.destination);
+
+	tone.start(startTime);
+	tone.stop(startTime + 0.45);
+}
+
 function handleCollision(itemIndex) {
 	const item = items[itemIndex];
 	const pointMultiplier = frenzyModeEnabled ? frenzyPointMultiplier : 1;
@@ -267,6 +578,7 @@ function handleCollision(itemIndex) {
 		score += 10 * pointMultiplier;
 		superMeter += 25;
 		createScorePopup(`+${10 * pointMultiplier}`, item.lane);
+		playPointSound();
 
 		if (superMeter >= superMeterMax && !invincibleMode) {
 			superMeter = superMeterMax;
@@ -282,6 +594,9 @@ function handleCollision(itemIndex) {
 		item.element.remove();
 		items.splice(itemIndex, 1);
 	} else if (item.type === 'reducer') {
+		// Green drop uses the same chime, but with a deeper pitch.
+		playPointSound(0.7);
+
 		if (invincibleMode) {
 			score += 5 * pointMultiplier;
 			createScorePopup(`+${5 * pointMultiplier}`, item.lane, 'shield');
@@ -299,6 +614,7 @@ function handleCollision(itemIndex) {
 			item.element.remove();
 			items.splice(itemIndex, 1);
 		} else {
+			playGameOverSound();
 			endGame();
 		}
 	}
@@ -316,6 +632,24 @@ function gameLoop(currentTime) {
 	gameTimeSeconds += deltaTime;
 	const pointMultiplier = frenzyModeEnabled ? frenzyPointMultiplier : 1;
 	const runSpeedMultiplier = frenzyModeEnabled ? frenzySpeedMultiplier : 1;
+	const journeyRateMultiplier = invincibleMode ? hydroJourneyBoost : 1;
+
+	if (shotCooldownTimeLeft > 0) {
+		shotCooldownTimeLeft -= deltaTime;
+		if (shotCooldownTimeLeft < 0) {
+			shotCooldownTimeLeft = 0;
+		}
+	}
+
+	if (tsunamiModeEnabled && !bossAreaReached) {
+		journeyProgressSeconds += deltaTime * journeyRateMultiplier;
+
+		if (journeyProgressSeconds >= journeyDurationSeconds) {
+			enterBossArea();
+		}
+	}
+
+	updateJourneyUI();
 
 	// Survival score increases over time.
 	score += deltaTime * 6 * pointMultiplier;
@@ -350,10 +684,27 @@ function gameLoop(currentTime) {
 	const spawnInterval = (invincibleMode ? 0.35 : 0.75) / runSpeedMultiplier;
 
 	// Spawn a new falling object at different rates based on mode.
-	spawnTimer += deltaTime;
-	if (spawnTimer >= spawnInterval) {
-		spawnItem();
-		spawnTimer = 0;
+	if (!bossAreaReached) {
+		spawnTimer += deltaTime;
+		if (spawnTimer >= spawnInterval) {
+			spawnItem();
+			spawnTimer = 0;
+		}
+	}
+
+	if (bossAreaReached && bossMovementActive) {
+		bossMoveTimer += deltaTime;
+		bossAttackTimer += deltaTime;
+
+		if (bossMoveTimer >= bossMoveIntervalSeconds) {
+			moveBossToRandomLane();
+			bossMoveTimer = 0;
+		}
+
+		if (bossAttackTimer >= bossPhaseOneAttackIntervalSeconds) {
+			spawnBossAttackDrop();
+			bossAttackTimer = 0;
+		}
 	}
 
 	// Move every item downward.
@@ -372,16 +723,66 @@ function gameLoop(currentTime) {
 		item.element.style.top = `${item.y}px`;
 
 		// Check collision near the player's row.
-		const nearPlayer = item.y > 430 && item.y < 500;
+		// Player is at bottom: 18px with height 62px, so it occupies roughly 700-762px in 780px area
+		const nearPlayer = item.y > 680 && item.y < 762;
 		if (nearPlayer && item.lane === playerLane) {
 			handleCollision(i);
 			continue;
 		}
 
-		// Remove items that leave the screen.
-		if (item.y > 620) {
+		// Remove items that leave the screen (game area is now 780px tall).
+		if (item.y > 780) {
 			item.element.remove();
 			items.splice(i, 1);
+		}
+	}
+
+	for (let i = playerShots.length - 1; i >= 0; i -= 1) {
+		const shot = playerShots[i];
+
+		shot.y -= shot.speed * deltaTime;
+		shot.element.style.top = `${shot.y}px`;
+
+		if (shot.y < -40) {
+			shot.element.remove();
+			playerShots.splice(i, 1);
+			continue;
+		}
+
+		if (!bossMovementActive) {
+			continue;
+		}
+
+		const shotRect = shot.element.getBoundingClientRect();
+		const bossRect = boss.getBoundingClientRect();
+		const hitBoss =
+			shotRect.left < bossRect.right &&
+			shotRect.right > bossRect.left &&
+			shotRect.top < bossRect.bottom &&
+			shotRect.bottom > bossRect.top;
+
+		if (hitBoss) {
+			shot.element.remove();
+			playerShots.splice(i, 1);
+			boss.classList.add('damaged');
+
+			if (bossDamageFlashTimeoutId) {
+				clearTimeout(bossDamageFlashTimeoutId);
+			}
+
+			bossDamageFlashTimeoutId = setTimeout(() => {
+				boss.classList.remove('damaged');
+				bossDamageFlashTimeoutId = null;
+			}, 500);
+			bossHealth -= bossDamagePerShot;
+			updateBossHealthUI();
+
+			if (bossHealth <= 0) {
+				bossHealth = 0;
+				updateBossHealthUI();
+				endGame(true);
+				return;
+			}
 		}
 	}
 
@@ -391,6 +792,7 @@ function gameLoop(currentTime) {
 function clearItems() {
 	items.forEach((item) => item.element.remove());
 	items = [];
+	clearPlayerShots();
 
 	// Also remove leftover score popups.
 	const oldPopups = gameArea.querySelectorAll('.score-popup');
@@ -432,6 +834,11 @@ document.addEventListener('keydown', (event) => {
 	if (event.key === 'ArrowRight') {
 		moveRight();
 	}
+
+	if (event.code === 'Space') {
+		event.preventDefault();
+		firePlayerShot();
+	}
 });
 
 // Touch + click support for mobile controls.
@@ -457,6 +864,12 @@ frenzyToggleStart.addEventListener('change', (event) => {
 frenzyToggleGameOver.addEventListener('change', (event) => {
 	setFrenzyMode(event.target.checked);
 });
+tsunamiToggleStart.addEventListener('change', (event) => {
+	setTsunamiMode(event.target.checked);
+});
+tsunamiToggleGameOver.addEventListener('change', (event) => {
+	setTsunamiMode(event.target.checked);
+});
 confirmResetButton.addEventListener('click', () => {
 	resetBestScore();
 	closeResetModal();
@@ -467,4 +880,19 @@ resetConfirmModal.addEventListener('click', (event) => {
 	if (event.target === resetConfirmModal) {
 		closeResetModal();
 	}
+});
+
+boss.addEventListener('animationend', (event) => {
+	if (event.animationName !== 'bossAppear') {
+		return;
+	}
+
+	// Show the health bar after the boss has reached its final position.
+	bossHealthBar.classList.add('visible');
+	bossHealthBar.setAttribute('aria-hidden', 'false');
+	bossFireHint.classList.add('visible');
+	bossFireHint.setAttribute('aria-hidden', 'false');
+	bossMoveTimer = 0;
+	bossAttackTimer = 0;
+	bossMovementActive = true;
 });
