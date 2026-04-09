@@ -62,6 +62,11 @@ const bossPhaseOneAttackIntervalSeconds = 0.85;
 const bossDamagePerShot = 5;
 const shotSpeed = 680;
 const shotCooldownSeconds = 0.2;
+const bossEntranceStartY = -160;
+const bossEntranceEndY = 160;
+const bossEntranceDurationMs = 4000;
+const bossSpriteWaitMaxMs = 1500;
+const bossDamageFlashDurationMs = 180;
 
 let playerLane = 1;
 let items = [];
@@ -90,6 +95,9 @@ let bossAttackTimer = 0;
 let playerShots = [];
 let shotCooldownTimeLeft = 0;
 let bossDamageFlashTimeoutId = null;
+let bossEntranceAnimationId = null;
+let bossSpritesReady = false;
+let preloadedBossImages = [];
 
 bestScoreValue.textContent = bestScore;
 movePlayerToLane();
@@ -97,6 +105,29 @@ updateSuperMeterUI();
 setFrenzyMode(frenzyModeEnabled);
 setTsunamiMode(tsunamiModeEnabled);
 updateDecontaminationLock();
+preloadBossSprites();
+
+function preloadBossSprites() {
+	// Keep image objects in memory so boss sprites are fetched and decoded before entrance.
+	const spritePaths = ['img/enemy.png', 'img/enemyDamaged.png'];
+	let loadedSprites = 0;
+
+	preloadedBossImages = spritePaths.map((path) => {
+		const image = new Image();
+
+		const markLoaded = () => {
+			loadedSprites += 1;
+			if (loadedSprites >= spritePaths.length) {
+				bossSpritesReady = true;
+			}
+		};
+
+		image.addEventListener('load', markLoaded, { once: true });
+		image.addEventListener('error', markLoaded, { once: true });
+		image.src = path;
+		return image;
+	});
+}
 
 function syncFrenzyToggles() {
 	frenzyToggleStart.checked = frenzyModeEnabled;
@@ -241,17 +272,22 @@ function firePlayerShot() {
 		return;
 	}
 
+	const gameHeight = gameArea.clientHeight;
+	const playerBottom = Number.parseFloat(window.getComputedStyle(player).bottom) || 18;
+	const playerTop = gameHeight - playerBottom - player.offsetHeight;
+	const shotStartY = Math.max(20, playerTop - 24);
+
 	const shotEl = document.createElement('div');
 	shotEl.className = 'player-shot';
 	shotEl.style.left = `${lanePercent[playerLane]}%`;
-	shotEl.style.top = '690px';
+	shotEl.style.top = `${shotStartY}px`;
 	shotEl.style.transform = 'translateX(-50%)';
 
 	gameArea.appendChild(shotEl);
 
 	playerShots.push({
 		element: shotEl,
-		y: 690,
+		y: shotStartY,
 		lane: playerLane,
 		speed: shotSpeed
 	});
@@ -265,6 +301,11 @@ function clearPlayerShots() {
 }
 
 function startGame() {
+	if (bossEntranceAnimationId) {
+		cancelAnimationFrame(bossEntranceAnimationId);
+		bossEntranceAnimationId = null;
+	}
+
 	clearItems();
 	score = 0;
 	superMeter = 0;
@@ -288,6 +329,7 @@ function startGame() {
 	player.classList.remove('invincible');
 	boss.classList.remove('appearing');
 	boss.classList.remove('damaged');
+	boss.style.top = `${bossEntranceStartY}px`;
 	moveBossToLane(1);
 	bossMoveTimer = 0;
 	bossMovementActive = false;
@@ -357,11 +399,23 @@ function updateJourneyUI() {
 }
 
 function enterBossArea() {
+	if (bossEntranceAnimationId) {
+		cancelAnimationFrame(bossEntranceAnimationId);
+		bossEntranceAnimationId = null;
+	}
+
 	bossAreaReached = true;
 	journeyProgressSeconds = journeyDurationSeconds;
+	// Lock and immediately disable Hydromatic mode when the boss entrance begins.
+	invincibleMode = false;
+	modeTimeLeft = 0;
+	superMeter = 0;
+	gameArea.classList.remove('chaos');
+	player.classList.remove('invincible');
 	clearItems();
 	spawnTimer = 0;
 	updateJourneyUI();
+	updateSuperMeterUI();
 	bossMoveTimer = 0;
 	bossMovementActive = false;
 	boss.classList.remove('damaged');
@@ -372,9 +426,63 @@ function enterBossArea() {
 	bossHealthBar.setAttribute('aria-hidden', 'true');
 	bossFireHint.classList.remove('visible');
 	bossFireHint.setAttribute('aria-hidden', 'true');
-	
-	// Start the boss appearance cutscene animation
+
+	startBossEntranceWhenReady();
+}
+
+function startBossEntranceWhenReady() {
+	const waitStartTime = performance.now();
+
+	function waitForBossSprites(currentTime) {
+		const waitedLongEnough = currentTime - waitStartTime >= bossSpriteWaitMaxMs;
+
+		if (bossSpritesReady || waitedLongEnough) {
+			bossEntranceAnimationId = null;
+			startBossEntrance();
+			return;
+		}
+
+		bossEntranceAnimationId = requestAnimationFrame(waitForBossSprites);
+	}
+
+	bossEntranceAnimationId = requestAnimationFrame(waitForBossSprites);
+}
+
+function beginBossFightAfterEntrance() {
+	bossHealthBar.classList.add('visible');
+	bossHealthBar.setAttribute('aria-hidden', 'false');
+	bossFireHint.classList.add('visible');
+	bossFireHint.setAttribute('aria-hidden', 'false');
+	bossMoveTimer = 0;
+	bossAttackTimer = 0;
+	bossMovementActive = true;
+}
+
+function startBossEntrance() {
 	boss.classList.add('appearing');
+	boss.style.top = `${bossEntranceStartY}px`;
+
+	const entranceStartTime = performance.now();
+
+	function animateBossEntrance(currentTime) {
+		const elapsed = currentTime - entranceStartTime;
+		const progress = Math.min(1, elapsed / bossEntranceDurationMs);
+		const currentTop = bossEntranceStartY + (bossEntranceEndY - bossEntranceStartY) * progress;
+
+		// Move boss from top to battle row with simple linear position updates.
+		boss.style.top = `${currentTop}px`;
+
+		if (progress < 1) {
+			bossEntranceAnimationId = requestAnimationFrame(animateBossEntrance);
+			return;
+		}
+
+		boss.style.top = `${bossEntranceEndY}px`;
+		bossEntranceAnimationId = null;
+		beginBossFightAfterEntrance();
+	}
+
+	bossEntranceAnimationId = requestAnimationFrame(animateBossEntrance);
 }
 
 function resetBestScore() {
@@ -400,6 +508,7 @@ function closeResetModal() {
 function launchConfettiCelebration() {
 	const confettiColors = ['#ffc907', '#2e9df7', '#4fcb53', '#ff902a', '#f16061'];
 	const pieceCount = 70;
+	const fallDistance = Math.max(320, gameArea.clientHeight - 130);
 
 	for (let i = 0; i < pieceCount; i += 1) {
 		const confetti = document.createElement('div');
@@ -409,6 +518,7 @@ function launchConfettiCelebration() {
 		confetti.style.animationDuration = `${1.8 + Math.random() * 1.4}s`;
 		confetti.style.animationDelay = `${Math.random() * 0.18}s`;
 		confetti.style.setProperty('--drift', `${-90 + Math.random() * 180}px`);
+		confetti.style.setProperty('--fall-distance', `${fallDistance}px`);
 
 		gameArea.appendChild(confetti);
 
@@ -469,6 +579,14 @@ function activateHydromaticMode() {
 }
 
 function updateSuperMeterUI() {
+	if (bossAreaReached) {
+		meterFill.style.width = '0%';
+		meterFill.classList.remove('full');
+		meterLabel.textContent = 'Hydromatic Locked';
+		modeStatus.textContent = 'Boss Fight';
+		return;
+	}
+
 	if (invincibleMode) {
 		const activeModeDuration = getHydroModeDuration();
 		const modePercent = (modeTimeLeft / activeModeDuration) * 100;
@@ -487,6 +605,11 @@ function updateSuperMeterUI() {
 }
 
 function createScorePopup(text, lane, popupType = 'normal') {
+	const gameHeight = gameArea.clientHeight;
+	const playerBottom = Number.parseFloat(window.getComputedStyle(player).bottom) || 18;
+	const playerTop = gameHeight - playerBottom - player.offsetHeight;
+	const popupTop = Math.max(16, playerTop - 22);
+
 	const popup = document.createElement('div');
 	popup.className = 'score-popup';
 
@@ -496,7 +619,7 @@ function createScorePopup(text, lane, popupType = 'normal') {
 
 	popup.textContent = text;
 	popup.style.left = `${lanePercent[lane]}%`;
-	popup.style.top = '680px';
+	popup.style.top = `${popupTop}px`;
 	popup.style.transform = 'translateX(-50%)';
 
 	gameArea.appendChild(popup);
@@ -576,11 +699,13 @@ function handleCollision(itemIndex) {
 
 	if (item.type === 'clean') {
 		score += 10 * pointMultiplier;
-		superMeter += 25;
+		if (!bossAreaReached) {
+			superMeter += 25;
+		}
 		createScorePopup(`+${10 * pointMultiplier}`, item.lane);
 		playPointSound();
 
-		if (superMeter >= superMeterMax && !invincibleMode) {
+		if (superMeter >= superMeterMax && !invincibleMode && !bossAreaReached) {
 			superMeter = superMeterMax;
 			activateHydromaticMode();
 		}
@@ -710,6 +835,11 @@ function gameLoop(currentTime) {
 	// Move every item downward.
 	for (let i = items.length - 1; i >= 0; i -= 1) {
 		const item = items[i];
+		const gameHeight = gameArea.clientHeight;
+		const playerBottom = Number.parseFloat(window.getComputedStyle(player).bottom) || 18;
+		const playerTop = gameHeight - playerBottom - player.offsetHeight;
+		const playerBottomY = gameHeight - playerBottom;
+		const itemHeight = item.element.offsetHeight || 54;
 
 		// Every step interval, speed increases by 25%.
 		const speedSteps = Math.floor(gameTimeSeconds / speedStepSeconds);
@@ -722,16 +852,16 @@ function gameLoop(currentTime) {
 		item.y += item.speed * progressiveMultiplier * chaosMultiplier * runSpeedMultiplier * deltaTime;
 		item.element.style.top = `${item.y}px`;
 
-		// Check collision near the player's row.
-		// Player is at bottom: 18px with height 62px, so it occupies roughly 700-762px in 780px area
-		const nearPlayer = item.y > 680 && item.y < 762;
+		// Check collision when the item overlaps the player's vertical space.
+		const itemBottom = item.y + itemHeight;
+		const nearPlayer = itemBottom >= playerTop && item.y <= playerBottomY;
 		if (nearPlayer && item.lane === playerLane) {
 			handleCollision(i);
 			continue;
 		}
 
-		// Remove items that leave the screen (game area is now 780px tall).
-		if (item.y > 780) {
+		// Remove items that leave the visible game area.
+		if (item.y > gameHeight + itemHeight) {
 			item.element.remove();
 			items.splice(i, 1);
 		}
@@ -773,7 +903,7 @@ function gameLoop(currentTime) {
 			bossDamageFlashTimeoutId = setTimeout(() => {
 				boss.classList.remove('damaged');
 				bossDamageFlashTimeoutId = null;
-			}, 500);
+			}, bossDamageFlashDurationMs);
 			bossHealth -= bossDamagePerShot;
 			updateBossHealthUI();
 
@@ -882,17 +1012,3 @@ resetConfirmModal.addEventListener('click', (event) => {
 	}
 });
 
-boss.addEventListener('animationend', (event) => {
-	if (event.animationName !== 'bossAppear') {
-		return;
-	}
-
-	// Show the health bar after the boss has reached its final position.
-	bossHealthBar.classList.add('visible');
-	bossHealthBar.setAttribute('aria-hidden', 'false');
-	bossFireHint.classList.add('visible');
-	bossFireHint.setAttribute('aria-hidden', 'false');
-	bossMoveTimer = 0;
-	bossAttackTimer = 0;
-	bossMovementActive = true;
-});
